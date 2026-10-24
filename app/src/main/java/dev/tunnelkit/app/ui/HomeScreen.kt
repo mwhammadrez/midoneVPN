@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -130,6 +132,10 @@ fun HomeScreen(
     onServerSelected: (ServerRow) -> Unit = {},
     onImport: (String) -> Unit = {},
     importError: String? = null,
+    scanning: Boolean = false,
+    scanStatus: String? = null,
+    onScan: () -> Unit = {},
+    onCancelScan: () -> Unit = {},
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var importOpen by remember { mutableStateOf(false) }
@@ -137,7 +143,7 @@ fun HomeScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     Box(modifier = modifier.fillMaxSize().background(Tokens.Bg)) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             BrandHeader(onMenu = { settingsOpen = true })
 
             Hero(
@@ -157,12 +163,38 @@ fun HomeScreen(
             ) {
                 Text("SERVERS", color = Tokens.Muted, fontSize = 10.sp, letterSpacing = 1.6.sp)
                 Spacer(Modifier.weight(1f))
+                if (scanning) {
+                    Text(
+                        "CANCEL",
+                        color = Color(0xFFE8A33D),
+                        fontSize = 10.sp,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.clickable { onCancelScan() }.padding(6.dp),
+                    )
+                } else {
+                    Text(
+                        "TEST",
+                        color = Tokens.Text,
+                        fontSize = 10.sp,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.clickable(enabled = servers.isNotEmpty()) { onScan() }.padding(6.dp),
+                    )
+                }
                 Text(
                     "+ ADD",
                     color = Tokens.Text,
                     fontSize = 10.sp,
                     letterSpacing = 1.sp,
                     modifier = Modifier.clickable { importOpen = true }.padding(6.dp),
+                )
+            }
+            if (!scanStatus.isNullOrBlank()) {
+                Text(
+                    scanStatus,
+                    color = if (scanning) Tokens.Secondary else Tokens.Muted,
+                    fontSize = 10.sp,
+                    maxLines = 2,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
             LazyColumn(Modifier.fillMaxWidth()) {

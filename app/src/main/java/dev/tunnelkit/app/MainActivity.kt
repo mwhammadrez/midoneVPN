@@ -1,6 +1,9 @@
 package dev.tunnelkit.app
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
@@ -14,8 +17,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.activity.enableEdgeToEdge
 import dev.tunnelkit.app.ui.HomeScreen
 import dev.tunnelkit.app.ui.Method
 import dev.tunnelkit.app.ui.Methods
@@ -26,10 +31,18 @@ import dev.tunnelkit.core.config.WireGuardConfig
 import dev.tunnelkit.core.model.ConnectionState
 import dev.tunnelkit.core.profile.Profile
 import dev.tunnelkit.core.profile.ProfileStore
+import dev.tunnelkit.core.config.XrayConfigBuilder
+import dev.tunnelkit.core.net.EndpointScanner
+import dev.tunnelkit.core.net.ProbeRunner
+import dev.tunnelkit.engine.xray.LibXrayCore
+import dev.tunnelkit.engine.xray.XrayProbeRunner
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent { MidOneApp() }
     }
@@ -45,6 +58,10 @@ private fun MidOneApp() {
     var profiles by remember { mutableStateOf(store.list()) }
     var selected by remember { mutableStateOf(store.selected()) }
     var importError by remember { mutableStateOf<String?>(null) }
+    var scanning by remember { mutableStateOf(false) }
+    var scanStatus by remember { mutableStateOf<String?>(null) }
+    var scanJob by remember { mutableStateOf<Job?>(null) }
+    val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf<ConnectionState>(ConnectionState.Idle) }
     var method by remember { mutableStateOf(Methods.first()) }
 
@@ -53,6 +70,10 @@ private fun MidOneApp() {
     val consent = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result -> if (result.resultCode == android.app.Activity.RESULT_OK) startTunnel(context) }
+
+    val notifications = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* denied is allowed: the tunnel still works, only the notification is hidden */ }
 
     val connected = state is ConnectionState.Connected
     val status = when (val s = state) {
@@ -79,6 +100,12 @@ private fun MidOneApp() {
             } else if (selected == null) {
                 importError = null
             } else {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
                 val intent = VpnService.prepare(context)
                 if (intent != null) consent.launch(intent) else startTunnel(context)
             }
@@ -89,6 +116,52 @@ private fun MidOneApp() {
                 store.select(it.id)
                 selected = it
             }
+        },
+        scanning = scanning,
+        scanStatus = scanStatus,
+        onScan = {
+            if (!scanning) {
+                scanning = true
+                scanStatus = "آماده‌سازی تست…"
+                scanJob = scope.launch {
+                    val targets = profiles.mapNotNull { p ->
+                        runCatching {
+                            EndpointScanner.Target(
+                                p.id,
+                                XrayProbeRunner.Payload(
+                                    XrayConfigBuilder.socksConfig(
+                                        dev.tunnelkit.core.config.VlessLink.parse(p.link).getOrThrow().toOutboundJson()
+                                    )
+                                ),
+                            )
+                        }.getOrNull()
+                    }
+                    if (targets.isEmpty()) {
+                        scanStatus = "هیچ پروفایل قابل تستی نیست"
+                        scanning = false
+                        return@launch
+                    }
+                    val scanner = EndpointScanner(XrayProbeRunner(LibXrayCore()), concurrency = 3)
+                    val report = scanner.scan(
+                        targets,
+                        EndpointScanner.Budget(maxTargets = 16, timeoutPerTargetMs = 4000, totalBudgetMs = 60_000),
+                    ) { done, total -> scanStatus = "تست $done از $total…" }
+                    val ok = report.results.count { it.ok }
+                    val best = report.results.firstOrNull { it.ok }
+                    scanStatus = when {
+                        report.timedOut -> "لغو شد · $ok موفق از ${report.testedCount}"
+                        best != null -> "$ok از ${report.testedCount} تونل واقعی · بهترین ${best.delayMs}ms"
+                        else -> "هیچ‌کدام تونل برقرار نکردند (${report.testedCount} تست)"
+                    }
+                    scanning = false
+                }
+            }
+        },
+        onCancelScan = {
+            scanJob?.cancel()
+            scanJob = null
+            scanning = false
+            scanStatus = "لغو شد"
         },
         onImport = { raw ->
             val wg = ConfigDetector.parseWireGuard(raw)

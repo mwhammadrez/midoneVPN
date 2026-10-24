@@ -19,15 +19,13 @@ Written to be believed, not to look good.
 
 ## Deliberately temporary
 
-- `ProfileStore` uses **plain SharedPreferences**. It must move to a Keystore-backed store before any
-  real user profile touches it.
-- The UI is still the stage-1 demo screen; it does not yet drive `XrayTunnelService`.
+- `ProfileStore` now uses Keystore-backed EncryptedSharedPreferences with a one-way migration from the
+  legacy plaintext file — but this has never run on a device (no key invalidation / process-death test).
+- The UI drives `XrayTunnelService` and exposes import, method picker and a scanner action.
 - Two `VpnService` classes exist (`TunnelVpnService` demo, `XrayTunnelService` real). Android permits
   only one active, but the app should expose only the real one.
-- `EndpointScanner` is implemented and unit-tested but has never run against `libXray` on a device;
-  `pingBatch` behaviour on real profiles is unverified.
-- Health probe URL is hard-coded (`gstatic generate_204`); the brief requires it to be configurable
-  and privacy-considered.
+- `EndpointScanner` is wired to the UI but has never executed `pingBatch` on a device.
+- Health probe URL is still hard-coded in the service (`generate_204`); the scanner uses the same URL.
 
 ## Blocked by licence (not by effort)
 

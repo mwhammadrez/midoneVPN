@@ -1,19 +1,59 @@
 package dev.tunnelkit.core.profile
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 /**
- * Persists imported profiles. Plain prefs for now (tracked limitation);
- * the contract stays the same when this moves to a Keystore-backed store.
+ * Keystore-backed profile storage.
+ *
+ * - Secrets (UUIDs inside links, WireGuard private keys) live only in encrypted preferences.
+ * - One-way migration from the legacy plaintext store; the plaintext copy is removed afterwards.
+ * - If the Keystore key is invalidated or the file is corrupted, the store throws instead of
+ *   silently falling back to plaintext (a silent fallback would be a credential leak).
  */
 class ProfileStore(context: Context) {
 
-    private val prefs = context.getSharedPreferences("profiles", Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
 
-    fun list(): List<Profile> {
-        val raw = prefs.getString(KEY_LIST, null) ?: return emptyList()
-        return decode(raw)
+    private val prefs: SharedPreferences by lazy { openEncrypted() }
+
+    private fun openEncrypted(): SharedPreferences {
+        val masterKey = MasterKey.Builder(appContext)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+
+        val encrypted = EncryptedSharedPreferences.create(
+            appContext,
+            ENCRYPTED_FILE,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+        migrateLegacy(encrypted)
+        return encrypted
     }
+
+    /** Copies legacy plaintext profiles once, then deletes the plaintext copy. */
+    private fun migrateLegacy(target: SharedPreferences) {
+        if (target.getBoolean(KEY_MIGRATED, false)) return
+        val legacy = appContext.getSharedPreferences(LEGACY_FILE, Context.MODE_PRIVATE)
+        val raw = legacy.getString(LEGACY_KEY_LIST, null)
+        val selected = legacy.getString(LEGACY_KEY_SELECTED, null)
+        if (!raw.isNullOrBlank()) {
+            target.edit()
+                .putString(KEY_LIST, ProfileCodec.encode(ProfileCodec.decode(raw)))
+                .putString(KEY_SELECTED, selected)
+                .putBoolean(KEY_MIGRATED, true)
+                .apply()
+            legacy.edit().clear().apply()
+        } else {
+            target.edit().putBoolean(KEY_MIGRATED, true).apply()
+        }
+    }
+
+    fun list(): List<Profile> = ProfileCodec.decode(prefs.getString(KEY_LIST, null) ?: "")
 
     fun selectedId(): String? = prefs.getString(KEY_SELECTED, null)
 
@@ -24,14 +64,14 @@ class ProfileStore(context: Context) {
 
     fun add(profile: Profile): List<Profile> {
         val all = list().filterNot { it.id == profile.id } + profile
-        prefs.edit().putString(KEY_LIST, encode(all)).apply()
+        prefs.edit().putString(KEY_LIST, ProfileCodec.encode(all)).apply()
         select(profile.id)
         return all
     }
 
     fun remove(id: String): List<Profile> {
         val all = list().filterNot { it.id == id }
-        prefs.edit().putString(KEY_LIST, encode(all)).apply()
+        prefs.edit().putString(KEY_LIST, ProfileCodec.encode(all)).apply()
         if (selectedId() == id) prefs.edit().putString(KEY_SELECTED, all.firstOrNull()?.id).apply()
         return all
     }
@@ -42,27 +82,13 @@ class ProfileStore(context: Context) {
 
     fun clear() = prefs.edit().clear().apply()
 
-    /** Tab-separated records; links are single-line by nature. */
-    private fun encode(items: List<Profile>): String = items.joinToString("\n") { p ->
-        listOf(p.id, p.name.replace('\t', ' '), p.link, p.transport, p.security).joinToString("\t")
-    }
-
-    private fun decode(raw: String): List<Profile> = raw.lineSequence()
-        .filter { it.isNotBlank() }
-        .mapNotNull { line ->
-            val f = line.split('\t')
-            if (f.size < 3) null else Profile(
-                id = f[0],
-                name = f[1],
-                link = f[2],
-                transport = f.getOrElse(3) { "" },
-                security = f.getOrElse(4) { "" },
-            )
-        }
-        .toList()
-
     private companion object {
+        const val ENCRYPTED_FILE = "profiles_enc"
+        const val LEGACY_FILE = "profiles"
         const val KEY_LIST = "profile_list_v1"
         const val KEY_SELECTED = "profile_selected"
+        const val KEY_MIGRATED = "migrated_v1"
+        const val LEGACY_KEY_LIST = "profile_list_v1"
+        const val LEGACY_KEY_SELECTED = "profile_selected"
     }
 }

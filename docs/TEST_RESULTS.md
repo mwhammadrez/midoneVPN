@@ -7,9 +7,11 @@ No device, no emulator, no server credentials, no Iranian network.
 
 | Check | Command | Result |
 |---|---|---|
-| Compile + tests | `./gradlew :app:testDebugUnitTest` | **46 tests, 0 failures** |
+| Compile + tests | `./gradlew :app:testDebugUnitTest` | **61 tests, 0 failures** |
 | Debug APK (all ABIs) | `./gradlew :app:assembleDebug` | 141 MB universal |
 | Debug APK (per ABI, splits) | same | **arm64 41 MB · armv7 41 MB · x86_64 43 MB** |
+| Release APK (R8) | `:app:assembleRelease` | 39 / 38 / 41 MB (unsigned) |
+| Release AAB | `:app:bundleRelease` | **51 MB** (all ABIs) |
 | UI snapshot (JVM) | `./gradlew recordPaparazziDebug` | PNG rendered, committed as baseline |
 
 ## Test inventory
@@ -24,6 +26,8 @@ No device, no emulator, no server credentials, no Iranian network.
 | `SubscriptionFetcherTest` | 7 | SSRF guard, HTTPS-only, redirect re-check, last-good fallback | passed |
 | `EndpointScannerTest` | 5 | ranking, budgets, dedupe, total-timeout cancellation, crash isolation | passed |
 | `PingBatchTest` | 4 | `pingBatch` envelope, result parsing, runner mapping | passed |
+| `WireGuardConfigTest` | 10 | WG parsing, validation, unknown fields, redaction | passed |
+| `ProfileCodecTest` | 5 | encrypted-store codec, sanitisation, malformed lines, redaction | passed |
 | `VlessLinkTest` (skill asset) | 5 | `vless://` parsing + Xray JSON | passed (in `skills/`) |
 
 ## Engine-by-engine
