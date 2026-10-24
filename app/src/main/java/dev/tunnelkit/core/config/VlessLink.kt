@@ -25,6 +25,12 @@ data class VlessLink(
     val serviceName: String? = null,
     val xhttpMode: String? = null,
     val socksPort: Int = 10808,
+    /** `pcs=` — hex SHA-256 of the server certificate (replaces the removed allowInsecure). */
+    val pinnedCertSha256: String? = null,
+    /** `vcn=` — verify the presented certificate name instead of the chain. */
+    val verifyPeerCertByName: String? = null,
+    /** `allowInsecure=1` in the link. Xray >= 26 removed the option, so it cannot be honoured. */
+    val allowInsecure: Boolean = false,
 ) {
 
     /** Returns a list of human-readable problems; empty means the link is usable. */
@@ -47,6 +53,9 @@ data class VlessLink(
     fun warnings(): List<String> = buildList {
         if (security == "none" && !isPrivateHost()) {
             add("security_none_public")
+        }
+        if (allowInsecure && pinnedCertSha256.isNullOrBlank()) {
+            add("cert_not_trusted")
         }
     }
 
@@ -80,7 +89,11 @@ data class VlessLink(
             shortId?.let { q += "sid=$it" }
             q += "fp=$fingerprint"
         }
-        if (sec == "tls") q += "fp=$fingerprint"
+        if (sec == "tls") {
+            q += "fp=$fingerprint"
+            pinnedCertSha256?.let { q += "pcs=$it" }
+            verifyPeerCertByName?.let { q += "vcn=$it" }
+        }
         path?.let { q += "path=" + enc(it) }
         hostHeader?.let { q += "host=" + enc(it) }
         serviceName?.let { q += "serviceName=" + enc(it) }
@@ -116,13 +129,17 @@ data class VlessLink(
             append(",\"tlsSettings\":{")
             append("\"serverName\":").append(quote(sni ?: host))
             append(",\"fingerprint\":").append(quote(fingerprint))
+            pinnedCertSha256?.let { append(",\"pinnedPeerCertSha256\":").append(quote(it)) }
+            verifyPeerCertByName?.let { append(",\"verifyPeerCertByName\":").append(quote(it)) }
             append("}")
         }
         when (network) {
             "ws" -> {
                 append(",\"wsSettings\":{\"path\":").append(quote(path ?: "/"))
                 if (!hostHeader.isNullOrBlank()) {
-                    append(",\"headers\":{\"Host\":").append(quote(hostHeader)).append("}")
+                    // Xray >= 25 reads the Host header from the sibling "host" field;
+                    // the old headers.Host form is deprecated and logs a warning on every start.
+                    append(",\"host\":").append(quote(hostHeader))
                 }
                 append("}")
             }
@@ -188,6 +205,9 @@ data class VlessLink(
                 hostHeader = params["host"],
                 serviceName = params["serviceName"],
                 xhttpMode = params["mode"],
+                pinnedCertSha256 = params["pcs"]?.takeIf { it.isNotBlank() },
+                verifyPeerCertByName = params["vcn"]?.takeIf { it.isNotBlank() },
+                allowInsecure = params["allowinsecure"] == "1" || params["insecure"] == "1",
             )
         }
 

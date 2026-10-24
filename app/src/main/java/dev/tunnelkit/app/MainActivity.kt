@@ -252,6 +252,8 @@ private fun MidOneApp() {
                 importWarning = when {
                     link.warnings().contains("security_none_public") ->
                         "ذخیره شد، ولی این سرور بدون TLS است؛ Xray آن را رد می‌کند — سرور را روی ۴۴۳ با TLS بگذار"
+                    link.warnings().contains("cert_not_trusted") ->
+                        "ذخیره شد، ولی گواهی سرور معتبر نیست و Xray 26 دیگر allowInsecure را نمی‌پذیرد"
                     else -> null
                 }
                 return@import problems.isEmpty()

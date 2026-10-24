@@ -25,17 +25,18 @@ object XrayConfigBuilder {
     )
 
     private val DIRECT_ROUTING =
-        ""","routing":{"domainStrategy":"AsIs","rules":[
+        """{"domainStrategy":"AsIs","rules":[
           {"type":"field","ip":[""" + PRIVATE_CIDRS.joinToString(",") { "\"$it\"" } + """],"outboundTag":"direct"},
-          {"type":"field","network":"udp","port":53,"outboundTag":"proxy"}
+          {"type":"field","network":"udp","port":53,"outboundTag":"proxy"},
+          {"type":"field","network":"tcp,udp","outboundTag":"proxy"}
         ]}"""
 
     fun socksConfig(outboundJson: String, socksPort: Int = 10808): String = buildString {
         append("""{"log":{"loglevel":"warning"},"inbounds":[""")
         append("""{"tag":"socks-in","listen":"127.0.0.1","port":""").append(socksPort)
         append(""","protocol":"socks","settings":{"udp":true,"auth":"noauth"}}],""")
-        append(""""outbounds":[{"tag":"direct","protocol":"freedom"},""")
-        append(outboundJson).append("]")
+        append(""""outbounds":[""").append(outboundJson)
+        append(""",{"tag":"direct","protocol":"freedom"}],"routing":""")
         append(DIRECT_ROUTING).append("}")
     }
 
@@ -56,8 +57,8 @@ object XrayConfigBuilder {
         append(""""name":"tun0","mtu":""").append(mtu)
         if (dns != null) append(""","dns":[""").append(quote(dns)).append("]")
         append("}}],")
-        append(""""outbounds":[{"tag":"direct","protocol":"freedom"},""")
-        append(outboundJson).append("]")
+        append(""""outbounds":[""").append(outboundJson)
+        append(""",{"tag":"direct","protocol":"freedom"}],"routing":""")
         append(DIRECT_ROUTING).append("}")
     }
 

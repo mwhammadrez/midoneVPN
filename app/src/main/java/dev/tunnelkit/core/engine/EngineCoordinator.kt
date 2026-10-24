@@ -76,8 +76,10 @@ class EngineCoordinator(
             onEvent("blocked: ${blocked.message}")
         } catch (t: Throwable) {
             runCatching { engine.stop() }
-            _state.value = ConnectionState.Failed(mapFailure(t), id)
-            onEvent("failed: ${t.javaClass.simpleName}")
+            val failure = mapFailure(t)
+            _state.value = ConnectionState.Failed(failure, id)
+            val detail = failure.detail.ifBlank { t.message ?: "" }.take(300)
+            onEvent("failed: ${failure.code}" + if (detail.isBlank()) "" else " — $detail")
         }
     }
 

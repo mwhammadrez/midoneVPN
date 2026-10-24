@@ -81,6 +81,9 @@ object XrayProtocol {
                 Failure.DnsFailure(error)
             e.contains("tls") || e.contains("certificate") || e.contains("handshake") ->
                 Failure.TlsFailure(error)
+            // A CDN that accepts TCP and then drops the upgrade: wrong path/Host, or SNI filtering.
+            e.contains("failed to dial") && (e.contains("eof") || e.contains("reset")) ->
+                Failure.EndpointUnreachable("server closed during the WebSocket upgrade: $error")
             e.contains("timeout") || e.contains("timed out") -> Failure.Timeout(error)
             e.contains("without tls") || e.contains("is prohibited") ->
                 Failure.UnsupportedFeature("plaintext VLESS to a public host (needs TLS/REALITY)")
