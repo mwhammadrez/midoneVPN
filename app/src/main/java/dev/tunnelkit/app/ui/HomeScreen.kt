@@ -130,8 +130,9 @@ fun HomeScreen(
     onToggle: () -> Unit = {},
     onMethodChange: (Method) -> Unit = {},
     onServerSelected: (ServerRow) -> Unit = {},
-    onImport: (String) -> Unit = {},
+    onImport: (String) -> Boolean = { false },
     importError: String? = null,
+    importWarning: String? = null,
     scanning: Boolean = false,
     scanStatus: String? = null,
     onScan: () -> Unit = {},
@@ -233,8 +234,13 @@ fun HomeScreen(
     if (importOpen) {
         ImportSheet(
             error = importError,
+            warning = importWarning,
             onDismiss = { importOpen = false },
-            onSubmit = { text -> onImport(text) },
+            onSubmit = { text ->
+                val ok = onImport(text)
+                if (ok) importOpen = false
+                ok
+            },
         )
     }
 
@@ -530,7 +536,12 @@ private fun ServerLine(row: ServerRow, selected: Boolean, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ImportSheet(error: String?, onDismiss: () -> Unit, onSubmit: (String) -> Unit) {
+private fun ImportSheet(
+    error: String?,
+    warning: String?,
+    onDismiss: () -> Unit,
+    onSubmit: (String) -> Boolean,
+) {
     var text by remember { mutableStateOf("") }
     var localError by remember { mutableStateOf<String?>(null) }
 
@@ -554,7 +565,10 @@ private fun ImportSheet(error: String?, onDismiss: () -> Unit, onSubmit: (String
             val shown = localError ?: error
             if (!shown.isNullOrBlank()) {
                 Spacer(Modifier.height(6.dp))
-                Text(shown, color = Color(0xFFE8A33D), fontSize = 10.sp)
+                Text(shown, color = Color(0xFFF87171), fontSize = 10.sp)
+            } else if (!warning.isNullOrBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Text(warning, color = Color(0xFFE8A33D), fontSize = 10.sp)
             }
             Spacer(Modifier.height(10.dp))
             Text(

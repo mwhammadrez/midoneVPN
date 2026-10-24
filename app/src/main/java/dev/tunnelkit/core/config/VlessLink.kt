@@ -41,12 +41,12 @@ data class VlessLink(
         if (network != "tcp" && flow == "xtls-rprx-vision") {
             add("flow xtls-rprx-vision only works on tcp; drop it or switch network to tcp")
         }
+    }
+
+    /** Non-blocking problems: the profile is storable, but the engine will refuse it as-is. */
+    fun warnings(): List<String> = buildList {
         if (security == "none" && !isPrivateHost()) {
-            add(
-                "security=none on a public host: upstream Xray >= 24.x refuses to start " +
-                    "(VLESS without TLS is only allowed to private addresses). " +
-                    "Use TLS/REALITY on 443, or a core built with that restriction removed."
-            )
+            add("security_none_public")
         }
     }
 
@@ -64,6 +64,32 @@ data class VlessLink(
         }
         return false
     }
+
+    /** Rebuilds a share link, optionally forcing TLS on another port. */
+    fun toShareLink(
+        forceTls: Boolean = false,
+        tlsPort: Int = 443,
+        tlsSni: String? = null,
+    ): String {
+        val sec = if (forceTls) "tls" else security
+        val p = if (forceTls) tlsPort else port
+        val q = mutableListOf("encryption=none", "security=$sec", "type=$network")
+        if (sec == "tls" || sec == "reality") q += "sni=" + enc(tlsSni ?: sni ?: hostHeader ?: host)
+        if (sec == "reality") {
+            publicKey?.let { q += "pbk=$it" }
+            shortId?.let { q += "sid=$it" }
+            q += "fp=$fingerprint"
+        }
+        if (sec == "tls") q += "fp=$fingerprint"
+        path?.let { q += "path=" + enc(it) }
+        hostHeader?.let { q += "host=" + enc(it) }
+        serviceName?.let { q += "serviceName=" + enc(it) }
+        flow?.let { q += "flow=$it" }
+        return "vless://$uuid@$host:$p?" + q.joinToString("&") + "#" + enc(label.ifBlank { host })
+    }
+
+    private fun enc(v: String): String =
+        java.net.URLEncoder.encode(v, "UTF-8").replace("+", "%20")
 
     /** Only the outbound object — so callers can compose SOCKS or TUN configs around it. */
     fun toOutboundJson(): String = buildString {

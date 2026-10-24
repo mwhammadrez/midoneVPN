@@ -30,7 +30,11 @@ import dev.tunnelkit.core.config.ConfigDetector
 import dev.tunnelkit.core.config.VlessLink
 import dev.tunnelkit.core.config.WireGuardConfig
 import dev.tunnelkit.core.model.ConnectionState
+import dev.tunnelkit.app.ui.fa
+import dev.tunnelkit.app.ui.actionHint
 import dev.tunnelkit.core.profile.Profile
+import dev.tunnelkit.app.ui.fa
+import dev.tunnelkit.app.ui.actionHint
 import dev.tunnelkit.core.profile.ProfileStore
 import dev.tunnelkit.core.config.XrayConfigBuilder
 import dev.tunnelkit.core.net.EndpointScanner
@@ -59,6 +63,7 @@ private fun MidOneApp() {
     var profiles by remember { mutableStateOf(store.list()) }
     var selected by remember { mutableStateOf(store.selected()) }
     var importError by remember { mutableStateOf<String?>(null) }
+    var importWarning by remember { mutableStateOf<String?>(null) }
     var scanning by remember { mutableStateOf(false) }
     var scanStatus by remember { mutableStateOf<String?>(null) }
     var scanJob by remember { mutableStateOf<Job?>(null) }
@@ -79,7 +84,8 @@ private fun MidOneApp() {
     val connected = state is ConnectionState.Connected
     val status = when (val s = state) {
         is ConnectionState.Connected -> "connected"
-        is ConnectionState.Failed -> "⚠ ${s.failure.code}${if (s.failure.detail.isBlank()) "" else ": " + s.failure.detail}".take(110)
+        is ConnectionState.Failed -> "⚠ " + s.failure.fa() +
+            (s.failure.actionHint()?.let { " — $it" } ?: "")
         is ConnectionState.Blocked -> "⛔ ${s.failure.code}"
         is ConnectionState.Connecting, is ConnectionState.Preparing -> "connecting…"
         is ConnectionState.Stopping, is ConnectionState.Stopped -> "disconnected"
@@ -93,6 +99,7 @@ private fun MidOneApp() {
         servers = profiles.map { it.toRow() },
         statusText = status,
         importError = importError,
+        importWarning = importWarning,
         settingsInfo = SettingsInfo(
             version = BuildConfig.VERSION_NAME,
             lastFailure = (state as? ConnectionState.Failed)?.failure?.code,
@@ -168,13 +175,14 @@ private fun MidOneApp() {
             scanning = false
             scanStatus = "لغو شد"
         },
-        onImport = { raw ->
+        onImport = import@{ raw ->
             val wg = ConfigDetector.parseWireGuard(raw)
             if (wg != null) {
                 if (!wg.ok) {
                     importError = "کانفیگ WireGuard ناقص است: " +
                         wg.problems.filter { it.code != WireGuardConfig.Code.UNKNOWN_FIELD }
                             .joinToString(", ") { it.code.name.lowercase() }
+                    return@import false
                 } else {
                     val summary = wg.config!!.redactedSummary()
                     val profile = Profile(
@@ -187,14 +195,16 @@ private fun MidOneApp() {
                     store.add(profile)
                     profiles = store.list()
                     selected = profile
-                    importError = "ذخیره شد ($summary) — موتور WireGuard هنوز ادغام نشده"
+                    importError = null
+                    importWarning = "ذخیره شد ($summary) — موتور WireGuard هنوز ادغام نشده"
+                    return@import true
                 }
-                return@HomeScreen
             }
 
             val parsed = VlessLink.parse(raw)
             if (parsed.isFailure) {
                 importError = "لینک معتبر نیست: ${parsed.exceptionOrNull()?.message ?: ""}"
+                return@import false
             } else {
                 val link = parsed.getOrThrow()
                 val problems = link.validate()
@@ -206,10 +216,33 @@ private fun MidOneApp() {
                     security = link.security,
                 )
                 store.add(profile)
+
+                // A security=none profile cannot work with the upstream engine. Offer a TLS/443
+                // twin as a separate, explicit entry instead of silently rewriting the user's link.
+                if (link.warnings().contains("security_none_public")) {
+                    val tlsLink = link.toShareLink(forceTls = true)
+                    store.add(
+                        Profile(
+                            id = UUID.randomUUID().toString(),
+                            name = profile.name + " · TLS",
+                            link = tlsLink,
+                            transport = link.network,
+                            security = "tls",
+                        )
+                    )
+                }
+
                 profiles = store.list()
                 selected = profile
                 importError = if (problems.isEmpty()) null else problems.first()
+                importWarning = when {
+                    link.warnings().contains("security_none_public") ->
+                        "ذخیره شد، ولی این سرور بدون TLS است؛ Xray آن را رد می‌کند — سرور را روی ۴۴۳ با TLS بگذار"
+                    else -> null
+                }
+                return@import problems.isEmpty()
             }
+            false
         },
     )
 }
