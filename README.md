@@ -17,7 +17,10 @@ verified on a physical device or on an Iranian network.**
 | WireGuard `.conf` parsing and validation | implemented + tested (engine **not** integrated) |
 | Endpoint scanner (`pingBatch`, budgets, cancel, ranking) | implemented + tested (no UI yet) |
 | Single-screen UI, profile import, 7-method picker | implemented |
-| **56 unit tests** | passing |
+| Keystore-backed profile storage + migration | implemented (codec tested; device-untested) |
+| targetSdk 36, edge-to-edge, POST_NOTIFICATIONS | implemented |
+| Release: R8 + AAB | signed AAB 51 MB when a keystore exists |
+| **61 unit tests** | passing |
 
 ## What is not
 
@@ -25,8 +28,8 @@ verified on a physical device or on an Iranian network.**
 - WireGuard, DNS tunnel engines — parsing exists, transport does not.
 - Psiphon, CDN-fronted meek, SNI spoofing, OpenVPN/IKEv2/Stealth/WStunnel — `blocked_license` for a
   non-GPL product (see `docs/LICENSE_REVIEW.md`).
-- `targetSdk` is 34; Play requires 36.
-- Profile storage is plain SharedPreferences (not Keystore-backed yet).
+
+
 
 ## Build
 

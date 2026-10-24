@@ -7,11 +7,11 @@ No device, no emulator, no server credentials, no Iranian network.
 
 | Check | Command | Result |
 |---|---|---|
-| Compile + tests | `./gradlew :app:testDebugUnitTest` | **61 tests, 0 failures** |
+| Compile + tests | `./gradlew :app:testDebugUnitTest` | **61 tests, 0 failures (device tests: see DEVICE_TEST_RESULTS.md)** |
 | Debug APK (all ABIs) | `./gradlew :app:assembleDebug` | 141 MB universal |
 | Debug APK (per ABI, splits) | same | **arm64 41 MB · armv7 41 MB · x86_64 43 MB** |
-| Release APK (R8) | `:app:assembleRelease` | 39 / 38 / 41 MB (unsigned) |
-| Release AAB | `:app:bundleRelease` | **51 MB** (all ABIs) |
+| Release APK (R8) | `:app:assembleRelease` | 39 / 38 / 41 MB (signed when a keystore exists) |
+| Release AAB | `:app:bundleRelease` | **51 MB**, signed and verified with `jarsigner` |
 | UI snapshot (JVM) | `./gradlew recordPaparazziDebug` | PNG rendered, committed as baseline |
 
 ## Test inventory

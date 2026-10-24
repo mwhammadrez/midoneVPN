@@ -4,6 +4,10 @@ Written to be believed, not to look good.
 
 ## Not verified at all
 
+**Phase "device verification" is open**: no device is attached to this environment, so every
+device-level test is `blocked_environment`. See `DEVICE_TEST_RESULTS.md` for the full matrix and for
+the exact inputs (a working VLESS profile + a device) needed to close it.
+
 - **No device, no emulator, no Iranian network.** `Connectivity on an Iranian network has not been verified.`
 - No VLESS/Reality handshake has ever been attempted from this code. The adapter's envelope and error
   mapping are unit-tested; the engine itself has never been started.

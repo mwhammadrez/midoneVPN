@@ -1,8 +1,10 @@
 # Security notes
 
 ## Secrets
-- Profile storage is currently **plain SharedPreferences** — a tracked limitation, not a design choice.
-  Target: Keystore-backed `EncryptedSharedPreferences`. `android:allowBackup="false"` is set.
+- Profile storage is **Keystore-backed `EncryptedSharedPreferences`** (AES256-SIV keys, AES256-GCM values)
+  with a one-way migration from the legacy plaintext file. If the Keystore key is invalidated the store
+  throws instead of falling back to plaintext. `android:allowBackup="false"` is set.
+- Release signing material (`keystore.properties`, `*.jks`) is git-ignored and must never be committed.
 - Logs and diagnostics must be redacted: no UUID, no keys, no full URLs. `DiagnosticLine` carries text
   only; call sites must redact before appending.
 

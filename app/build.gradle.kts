@@ -5,6 +5,26 @@ plugins {
     id("app.cash.paparazzi") version "1.3.5"
 }
 
+import java.util.Properties
+
+// Release signing is configured from <root>/keystore.properties (never committed).
+// When it is missing, a release build fails with a clear Gradle error instead of
+// silently producing an unsigned artifact.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
+}
+
+val releaseTaskRequested = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+if (releaseTaskRequested && !keystorePropsFile.exists()) {
+    throw GradleException(
+        "Release signing requires keystore.properties at the project root " +
+            "(storeFile, storePassword, keyAlias, keyPassword). " +
+            "Create your own keystore — see docs/BUILD_ENVIRONMENT.md. " +
+            "Nothing is published unsigned on purpose."
+    )
+}
+
 android {
     namespace = "dev.tunnelkit.app"
     compileSdk = 35
@@ -17,8 +37,20 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystorePropsFile.exists()) {
+                storeFile = file(keystoreProps.getProperty("storeFile") ?: "")
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
