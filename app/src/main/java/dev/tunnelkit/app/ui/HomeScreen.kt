@@ -136,6 +136,7 @@ fun HomeScreen(
     scanStatus: String? = null,
     onScan: () -> Unit = {},
     onCancelScan: () -> Unit = {},
+    settingsInfo: SettingsInfo = SettingsInfo(),
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var importOpen by remember { mutableStateOf(false) }
@@ -243,7 +244,7 @@ fun HomeScreen(
             sheetState = sheetState,
             containerColor = Tokens.Upper,
         ) {
-            SettingsSheet()
+            SettingsSheet(settingsInfo)
         }
     }
 }
@@ -574,27 +575,35 @@ private fun ImportSheet(error: String?, onDismiss: () -> Unit, onSubmit: (String
     }
 }
 
+data class SettingsInfo(
+    val version: String = "0.1.0",
+    val engine: String = "libXray 26.10.21",
+    val licence: String = "MIT (libXray) · MPL-2.0 (Xray-core)",
+    val lastFailure: String? = null,
+    val probeUrl: String = "https://www.gstatic.com/generate_204",
+)
+
 @Composable
-private fun SettingsSheet() {
+private fun SettingsSheet(info: SettingsInfo) {
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
         Text("Settings", color = Tokens.Text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Connection settings are grouped; nothing here is decorative.",
+            "Only real controls are shown; unavailable features say so.",
             color = Tokens.Muted,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
         )
         Spacer(Modifier.height(12.dp))
         listOf(
-            "Protocol" to "WireGuard · VLESS · OpenVPN · Stealth · WStunnel",
-            "Routing" to "Split tunneling, allowed/disallowed apps",
-            "DNS & Network" to "Resolver, IPv6, private DNS handling",
-            "Diagnostics" to "Redacted log, connection test, export",
-            "About" to "MidONe · engine versions · licences",
+            "Protocol" to "Chosen from the method pill on the main screen · only AVAILABLE methods connect",
+            "Routing" to "Split tunneling — NOT IMPLEMENTED (no toggle is shown on purpose)",
+            "DNS & Network" to "Probe URL: ${info.probeUrl} · private DNS detection — NOT IMPLEMENTED",
+            "Diagnostics" to (info.lastFailure?.let { "Last failure: $it" } ?: "No failure recorded in this session"),
+            "About" to "${info.version} · ${info.engine} · ${info.licence}",
         ).forEach { (title, sub) ->
             Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                 Text(title, color = Tokens.Text, fontSize = 13.sp)
-                Text(sub, color = Tokens.Muted, fontSize = 10.sp)
+                Text(sub, color = Tokens.Muted, fontSize = 10.sp, maxLines = 3)
             }
             Divider(color = Tokens.Divider)
         }

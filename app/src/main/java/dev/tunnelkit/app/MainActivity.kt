@@ -25,6 +25,7 @@ import dev.tunnelkit.app.ui.HomeScreen
 import dev.tunnelkit.app.ui.Method
 import dev.tunnelkit.app.ui.Methods
 import dev.tunnelkit.app.ui.ServerRow
+import dev.tunnelkit.app.ui.SettingsInfo
 import dev.tunnelkit.core.config.ConfigDetector
 import dev.tunnelkit.core.config.VlessLink
 import dev.tunnelkit.core.config.WireGuardConfig
@@ -92,6 +93,10 @@ private fun MidOneApp() {
         servers = profiles.map { it.toRow() },
         statusText = status,
         importError = importError,
+        settingsInfo = SettingsInfo(
+            version = BuildConfig.VERSION_NAME,
+            lastFailure = (state as? ConnectionState.Failed)?.failure?.code,
+        ),
         onToggle = {
             if (connected || state.isActive()) {
                 context.startService(
