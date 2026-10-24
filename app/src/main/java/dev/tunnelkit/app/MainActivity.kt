@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.activity.enableEdgeToEdge
@@ -32,9 +33,8 @@ import dev.tunnelkit.core.config.WireGuardConfig
 import dev.tunnelkit.core.model.ConnectionState
 import dev.tunnelkit.app.ui.fa
 import dev.tunnelkit.app.ui.actionHint
+import dev.tunnelkit.core.diag.DiagLog
 import dev.tunnelkit.core.profile.Profile
-import dev.tunnelkit.app.ui.fa
-import dev.tunnelkit.app.ui.actionHint
 import dev.tunnelkit.core.profile.ProfileStore
 import dev.tunnelkit.core.config.XrayConfigBuilder
 import dev.tunnelkit.core.net.EndpointScanner
@@ -68,10 +68,18 @@ private fun MidOneApp() {
     var scanStatus by remember { mutableStateOf<String?>(null) }
     var scanJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
+    val diag by DiagLog.lines.collectAsStateWithLifecycle()
     var state by remember { mutableStateOf<ConnectionState>(ConnectionState.Idle) }
     var method by remember { mutableStateOf(Methods.first()) }
 
     LaunchedEffect(Unit) { XrayTunnelService.state.collect { state = it } }
+
+    LaunchedEffect(Unit) {
+        DiagLog.header(
+            "${BuildConfig.VERSION_NAME} · ${Build.MODEL} · Android ${Build.VERSION.RELEASE} · " +
+                (Build.SUPPORTED_ABIS.firstOrNull() ?: "?")
+        )
+    }
 
     val consent = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -103,6 +111,12 @@ private fun MidOneApp() {
         settingsInfo = SettingsInfo(
             version = BuildConfig.VERSION_NAME,
             lastFailure = (state as? ConnectionState.Failed)?.failure?.code,
+            diagLines = diag,
+            onCopyDiagnostics = {
+                val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("MidONe diagnostics", DiagLog.dump()))
+            },
+            onClearDiagnostics = { DiagLog.clear() },
         ),
         onToggle = {
             if (connected || state.isActive()) {

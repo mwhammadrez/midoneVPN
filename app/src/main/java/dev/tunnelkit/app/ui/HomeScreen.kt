@@ -595,6 +595,9 @@ data class SettingsInfo(
     val licence: String = "MIT (libXray) · MPL-2.0 (Xray-core)",
     val lastFailure: String? = null,
     val probeUrl: String = "https://www.gstatic.com/generate_204",
+    val diagLines: List<String> = emptyList(),
+    val onCopyDiagnostics: () -> Unit = {},
+    val onClearDiagnostics: () -> Unit = {},
 )
 
 @Composable
@@ -612,7 +615,7 @@ private fun SettingsSheet(info: SettingsInfo) {
             "Protocol" to "Chosen from the method pill on the main screen · only AVAILABLE methods connect",
             "Routing" to "Split tunneling — NOT IMPLEMENTED (no toggle is shown on purpose)",
             "DNS & Network" to "Probe URL: ${info.probeUrl} · private DNS detection — NOT IMPLEMENTED",
-            "Diagnostics" to (info.lastFailure?.let { "Last failure: $it" } ?: "No failure recorded in this session"),
+            "Diagnostics" to (info.lastFailure?.let { "آخرین خطا: $it" } ?: "خطایی ثبت نشده"),
             "About" to "${info.version} · ${info.engine} · ${info.licence}",
         ).forEach { (title, sub) ->
             Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
@@ -620,6 +623,52 @@ private fun SettingsSheet(info: SettingsInfo) {
                 Text(sub, color = Tokens.Muted, fontSize = 10.sp, maxLines = 3)
             }
             Divider(color = Tokens.Divider)
+        }
+        Spacer(Modifier.height(8.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("LIVE LOG", color = Tokens.Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
+            Spacer(Modifier.weight(1f))
+            Text(
+                "CLEAR",
+                color = Tokens.Muted,
+                fontSize = 9.sp,
+                modifier = Modifier.clickable { info.onClearDiagnostics() }.padding(6.dp),
+            )
+            Text(
+                "COPY",
+                color = Tokens.Bg,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Tokens.Text)
+                    .clickable { info.onCopyDiagnostics() }
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF0B1118))
+                .padding(10.dp)
+        ) {
+            val shown = info.diagLines.takeLast(14)
+            if (shown.isEmpty()) {
+                Text("هنوز رویدادی ثبت نشده", color = Tokens.Muted, fontSize = 9.sp)
+            } else {
+                shown.forEach { line ->
+                    Text(
+                        line,
+                        color = Tokens.Secondary,
+                        fontSize = 8.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = 11.sp,
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(24.dp))
     }
