@@ -1,0 +1,22 @@
+# Build
+build/
+.gradle/
+local.properties
+.cxx/
+*.apk
+*.aab
+*.log
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Secrets — never commit
+*.keystore
+*.jks
+keystore.properties
+.env
+
+# Heavy binary, fetched by scripts/fetch-libxray.sh (see README)
+app/libs/*.aar

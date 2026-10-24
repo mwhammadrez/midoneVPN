@@ -1,0 +1,47 @@
+{
+  "generated": "2026-10-24",
+  "note": "Manually assembled inventory. A checksum proves integrity, not licensing rights.",
+  "dependencies": [
+    {
+      "name": "libXray",
+      "type": "aar",
+      "url": "https://github.com/XTLS/libXray",
+      "release": "v26.10.21",
+      "commit": "dbe95129fa96689c4643ddca52c278448eec6df1",
+      "license": "MIT",
+      "artifact": "app/libs/libXRay.aar",
+      "sha256": "90d1f4889f019fa97a0788d74e6b725038d1cebb2e1b68220253474a18d8a597",
+      "size_bytes": 52674713
+    },
+    {
+      "name": "Xray-core (embedded in libXray)",
+      "type": "go-module",
+      "url": "https://github.com/XTLS/Xray-core",
+      "version": "v26.10.21",
+      "license": "MPL-2.0",
+      "note": "Built into libgojni.so; not vendored separately."
+    },
+    {
+      "name": "AndroidX / Jetpack Compose",
+      "type": "maven",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "Kotlin stdlib + kotlinx-coroutines",
+      "type": "maven",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "JUnit 4",
+      "type": "maven",
+      "license": "EPL-1.0",
+      "scope": "test"
+    },
+    {
+      "name": "Paparazzi",
+      "type": "maven",
+      "license": "Apache-2.0",
+      "scope": "test"
+    }
+  ]
+}
