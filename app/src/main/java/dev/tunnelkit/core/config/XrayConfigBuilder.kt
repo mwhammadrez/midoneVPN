@@ -12,9 +12,21 @@ package dev.tunnelkit.core.config
  */
 object XrayConfigBuilder {
 
-    private const val DIRECT_ROUTING =
+    /**
+     * Private ranges are listed explicitly.
+     *
+     * `geoip:private` requires geoip.dat to sit next to the binary. libXray ships no data files, so
+     * Xray aborts at config load with "failed to open geoip.dat" and never opens a socket — the
+     * failure looks like a dead server. Plain CIDRs need no external asset.
+     */
+    private val PRIVATE_CIDRS = listOf(
+        "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
+        "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10",
+    )
+
+    private val DIRECT_ROUTING =
         ""","routing":{"domainStrategy":"AsIs","rules":[
-          {"type":"field","ip":["geoip:private"],"outboundTag":"direct"},
+          {"type":"field","ip":[""" + PRIVATE_CIDRS.joinToString(",") { "\"$it\"" } + """],"outboundTag":"direct"},
           {"type":"field","network":"udp","port":53,"outboundTag":"proxy"}
         ]}"""
 

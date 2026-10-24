@@ -7,7 +7,8 @@ import dev.tunnelkit.core.model.Failure
  * Raw codes stay available for diagnostics; users never see them alone.
  */
 fun Failure.fa(): String = when (this) {
-    is Failure.InvalidConfig -> "تنظیمات این پروفایل کامل نیست"
+    is Failure.InvalidConfig -> "تنظیمات ساخته‌شده معتبر نبود — این ایراد اپ است، نه سرور تو"
+    is Failure.InvalidConfig -> "گزارش را بفرست؛ اپ باید درست شود"
     is Failure.UnsupportedFeature ->
         if (detail.contains("plaintext", true)) "این سرور بدون TLS است؛ Xray آن را قبول نمی‌کند"
         else "این روش اتصال پشتیبانی نمی‌شود"
@@ -25,6 +26,7 @@ fun Failure.fa(): String = when (this) {
 }
 
 fun Failure.actionHint(): String? = when (this) {
+    is Failure.InvalidConfig -> "گزارش را بفرست؛ اپ باید درست شود"
     is Failure.UnsupportedFeature ->
         if (detail.contains("plaintext", true)) "سرور را روی ۴۴۳ با TLS بگذار و لینک را عوض کن" else null
     is Failure.MissingBootstrap -> "با + ADD لینک را وارد کن"

@@ -70,6 +70,11 @@ object XrayProtocol {
     fun failureFor(error: String): Failure {
         val e = error.lowercase()
         return when {
+            // Config rejected before any socket is opened: our own generator is at fault, not the server.
+            e.contains("failed to parse json config") || e.contains("infra/conf") ||
+                e.contains("failed to open ") || e.contains("illegal ip rule") ||
+                e.contains("unknown field") ->
+                Failure.InvalidConfig(error)
             e.contains("auth") || e.contains("rejected") || e.contains("invalid user") ->
                 Failure.AuthenticationFailure(error)
             e.contains("dns") || e.contains("no such host") || e.contains("resolve") ->

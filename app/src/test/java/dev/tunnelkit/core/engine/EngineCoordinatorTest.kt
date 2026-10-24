@@ -61,7 +61,7 @@ class EngineCoordinatorTest {
         val c = EngineCoordinator(mapOf(EngineId("a") to a))
         c.connect(EngineId("a"), cfg)
         val s = c.state.value as ConnectionState.Failed
-        assertEquals(Failure.InvalidConfig, s.failure)
+        assertEquals(Failure.InvalidConfig(), s.failure)
         assertEquals(0, a.started)
     }
 

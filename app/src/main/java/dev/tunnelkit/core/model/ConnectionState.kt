@@ -33,7 +33,7 @@ sealed interface ConnectionState {
 sealed class Failure(val code: String) {
     open val detail: String get() = ""
 
-    data object InvalidConfig : Failure("invalid_config")
+    data class InvalidConfig(override val detail: String = "") : Failure("invalid_config")
     data class UnsupportedFeature(val feature: String) : Failure("unsupported_feature") {
         override val detail: String get() = feature
     }

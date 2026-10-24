@@ -51,7 +51,7 @@ class EngineCoordinator(
         try {
             val check = engine.validate(config)
             if (!check.ok) {
-                _state.value = ConnectionState.Failed(Failure.InvalidConfig, id)
+                _state.value = ConnectionState.Failed(Failure.InvalidConfig(), id)
                 onEvent("validate failed: ${check.reason}")
                 return@withLock
             }
@@ -110,7 +110,7 @@ class EngineCoordinator(
 
     private fun mapFailure(t: Throwable): Failure = when (t) {
         is EngineFailureException -> t.failure
-        is IllegalArgumentException -> Failure.InvalidConfig
+        is IllegalArgumentException -> Failure.InvalidConfig()
         is SecurityException -> Failure.PermissionDenied(t.message ?: "")
         is java.net.UnknownHostException -> Failure.DnsFailure(t.message ?: "")
         is java.net.SocketTimeoutException -> Failure.Timeout(t.message ?: "")

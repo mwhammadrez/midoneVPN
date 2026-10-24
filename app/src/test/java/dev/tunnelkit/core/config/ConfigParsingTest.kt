@@ -3,6 +3,8 @@ package dev.tunnelkit.core.config
 import dev.tunnelkit.core.engine.ConfigFormat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Base64
 
@@ -78,5 +80,33 @@ class ConfigParsingTest {
         val r = SubscriptionParser.parse(many)
         assertEquals(SubscriptionParser.MAX_LINKS, r.links.size)
         assertTrue(r.truncated)
+    }
+}
+
+class RoutingAssetTest {
+    private val outbound = """{"tag":"proxy","protocol":"vless","settings":{}}"""
+
+    @Test
+    fun tunConfigNeverReferencesGeoAssets() {
+        val cfg = XrayConfigBuilder.tunConfig(outbound, fd = 42)
+        assertFalse("libXray ships no geoip.dat", cfg.contains("geoip:"))
+        assertFalse("geosite.dat is absent too", cfg.contains("geosite:"))
+    }
+
+    @Test
+    fun tunConfigKeepsPrivateBypassAsCidrs() {
+        val cfg = XrayConfigBuilder.tunConfig(outbound, fd = 42)
+        listOf("10.0.0.0/8", "192.168.0.0/16", "127.0.0.0/8", "fc00::/7").forEach {
+            assertTrue("missing $it", cfg.contains("\"$it\""))
+        }
+        assertTrue(cfg.contains("\"XRAY_TUN_FD\":\"42\""))
+        assertTrue(cfg.contains("\"protocol\":\"tun\""))
+    }
+
+    @Test
+    fun socksConfigNeverReferencesGeoAssets() {
+        val cfg = XrayConfigBuilder.socksConfig(outbound)
+        assertFalse(cfg.contains("geoip:"))
+        assertTrue(cfg.contains("\"socks-in\""))
     }
 }
