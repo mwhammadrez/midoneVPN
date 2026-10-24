@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import dev.tunnelkit.core.engine.EngineConfig
 import dev.tunnelkit.core.engine.EngineCoordinator
@@ -41,6 +42,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class XrayTunnelService : VpnService() {
 
     companion object {
+        private const val TAG = "MidONe"
         const val ACTION_START = "dev.tunnelkit.xray.START"
         const val ACTION_STOP = "dev.tunnelkit.xray.STOP"
 
@@ -62,6 +64,7 @@ class XrayTunnelService : VpnService() {
 
     private val coordinator by lazy {
         EngineCoordinator(
+            onEvent = { Log.i(TAG, "coordinator: $it") },
             engines = mapOf(
                 EngineId("xray") to XrayAdapter(
                     core = LibXrayCore(),
@@ -109,6 +112,7 @@ class XrayTunnelService : VpnService() {
             .addDisallowedApplication(packageName)
             .establish()
 
+        Log.i(TAG, "TUN establish -> ${if (pfd == null) "null" else "fd=${pfd.fd}"}")
         if (pfd == null) {
             _state.value = ConnectionState.Failed(
                 dev.tunnelkit.core.model.Failure.PermissionDenied("establish() returned null")
@@ -129,17 +133,22 @@ class XrayTunnelService : VpnService() {
                 ),
             )
             val result = coordinator.state.value
+            Log.i(TAG, "connect result: $result")
             _state.value = result
             postState()
 
-            if (result is ConnectionState.Connected && !probe()) {
-                // Interface is up but traffic does not flow: report it instead of pretending.
-                _state.value = ConnectionState.Failed(
-                    dev.tunnelkit.core.model.Failure.Timeout("tunnel up but probe failed"),
-                    EngineId("xray"),
-                )
-                postState()
-                teardownTunnel()
+            if (result is ConnectionState.Connected) {
+                val ok = probe()
+                Log.i(TAG, "health probe: ${if (ok) "passed" else "failed"}")
+                if (!ok) {
+                    // Interface is up but traffic does not flow: report it instead of pretending.
+                    _state.value = ConnectionState.Failed(
+                        dev.tunnelkit.core.model.Failure.Timeout("tunnel up but probe failed"),
+                        EngineId("xray"),
+                    )
+                    postState()
+                    teardownTunnel()
+                }
             }
         }
     }
