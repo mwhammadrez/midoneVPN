@@ -14,7 +14,7 @@ fun Failure.fa(): String = when (this) {
         else "این روش اتصال پشتیبانی نمی‌شود"
     is Failure.MissingCredentials -> "این پروفایل به نام کاربری یا کلید نیاز دارد"
     is Failure.MissingBootstrap -> "هیچ سروری وارد نشده — با + ADD یک لینک اضافه کن"
-    is Failure.DnsFailure -> "نام سرور پیدا نشد — DNS را عوض کن"
+    is Failure.DnsFailure -> "تونل بالاست ولی DNS از داخلش رد نمی‌شود"
     is Failure.TlsFailure -> "دست‌دهی امن انجام نشد — ساعت گوشی و SNI را چک کن"
     is Failure.AuthenticationFailure -> "UUID یا کلید با سرور نمی‌خواند"
     is Failure.EndpointUnreachable -> "به سرور نمی‌رسیم — شبکه یا پورت را عوض کن"
@@ -29,6 +29,7 @@ fun Failure.actionHint(): String? = when (this) {
     is Failure.InvalidConfig -> "گزارش را بفرست؛ اپ باید درست شود"
     is Failure.UnsupportedFeature ->
         if (detail.contains("plaintext", true)) "سرور را روی ۴۴۳ با TLS بگذار و لینک را عوض کن" else null
+    is Failure.DnsFailure -> "روتر یا اپ دیگری DNS را نمی‌قاپد؟ بعد از تست خبر بده"
     is Failure.MissingBootstrap -> "با + ADD لینک را وارد کن"
     is Failure.PermissionDenied -> "دوباره Connect بزن و اجازه بده"
     is Failure.AuthenticationFailure -> "لینک را دوباره از پنل بگیر"

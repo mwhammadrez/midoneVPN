@@ -56,7 +56,10 @@ object XrayConfigBuilder {
         append(""""inbounds":[{"tag":"tun-in","protocol":"tun","settings":{""")
         append(""""name":"tun0","mtu":""").append(mtu)
         if (dns != null) append(""","dns":[""").append(quote(dns)).append("]")
-        append("}}],")
+        append("}")   // close "settings"; the inbound itself closes after "sniffing"
+        // Sniffing recovers the requested hostname from TLS/HTTP so routing and DNS work even when
+        // the client resolved a poisoned address.
+        append(""","sniffing":{"enabled":true,"destOverride":["http","tls","quic"],"routeOnly":false}}],""")
         append(""""outbounds":[""").append(outboundJson)
         append(""",{"tag":"direct","protocol":"freedom"}],"routing":""")
         append(DIRECT_ROUTING).append("}")

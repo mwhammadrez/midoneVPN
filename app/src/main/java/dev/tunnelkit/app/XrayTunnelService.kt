@@ -10,6 +10,9 @@ import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.util.Log
 import dev.tunnelkit.core.diag.DiagLog
 import androidx.core.app.NotificationCompat
@@ -53,6 +56,8 @@ class XrayTunnelService : VpnService() {
         private const val TUN_PREFIX = 15
         private const val MTU = 1400
         private const val PROBE_URL = "https://www.gstatic.com/generate_204"
+        /** Bare IP: no DNS involved, so a failure here means packets are not flowing. */
+        private const val IP_PROBE_URL = "https://1.1.1.1/cdn-cgi/trace"
         private const val PROBE_TIMEOUT_MS = 4_000
 
         private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Idle)
@@ -139,14 +144,12 @@ class XrayTunnelService : VpnService() {
             postState()
 
             if (result is ConnectionState.Connected) {
-                val ok = probe()
-                Log.i(TAG, "health probe: ${if (ok) "passed" else "failed"}"); DiagLog.event("probe=${if (ok) "passed" else "failed"}")
-                if (!ok) {
+                val probe = probeThroughTunnel()
+                DiagLog.event(probe.describe())
+                Log.i(TAG, probe.describe())
+                if (probe.failure != null) {
                     // Interface is up but traffic does not flow: report it instead of pretending.
-                    _state.value = ConnectionState.Failed(
-                        dev.tunnelkit.core.model.Failure.Timeout("tunnel up but probe failed"),
-                        EngineId("xray"),
-                    )
+                    _state.value = ConnectionState.Failed(probe.failure, EngineId("xray"))
                     postState()
                     teardownTunnel()
                 }
@@ -154,19 +157,69 @@ class XrayTunnelService : VpnService() {
         }
     }
 
-    /** The only proof of success: a real HTTP request that must travel through the tunnel. */
-    private fun probe(): Boolean = runCatching {
-        val conn = URL(PROBE_URL).openConnection() as HttpURLConnection
+    private data class Probe(
+        val tcpIp: Boolean,
+        val dns: Boolean,
+        val https: Boolean,
+        val failure: dev.tunnelkit.core.model.Failure?,
+    ) {
+        fun describe(): String = "probe tcpIp=$tcpIp dns=$dns https=$https" +
+            (failure?.let { " -> ${it.code}" } ?: "")
+    }
+
+    /**
+     * Three steps, all bound to the VPN network, because this app excludes itself from the tunnel
+     * (its own sockets must not loop back into the TUN). A plain HttpURLConnection from this process
+     * therefore proves nothing: it bypasses the VPN.
+     *
+     *  tcpIp  bare IP over the tunnel -> is any packet flowing at all?
+     *  dns    name lookup through the VPN network -> does UDP/53 survive the tunnel?
+     *  https  a real HTTPS request -> end to end
+     */
+    private fun probeThroughTunnel(): Probe {
+        val net = vpnNetwork()
+        if (net == null) {
+            return Probe(false, false, false, dev.tunnelkit.core.model.Failure.Unknown("no VPN network"))
+        }
+
+        val tcpIp = fetch(net, IP_PROBE_URL) != null
+
+        val dns = runCatching {
+            net.getAllByName("www.gstatic.com").isNotEmpty()
+        }.getOrDefault(false)
+
+        val https = fetch(net, PROBE_URL) != null
+
+        val failure = when {
+            !tcpIp -> dev.tunnelkit.core.model.Failure.Timeout("no packet flow through the tun (bare IP failed)")
+            !dns -> dev.tunnelkit.core.model.Failure.DnsFailure("DNS through the tunnel failed")
+            !https -> dev.tunnelkit.core.model.Failure.TlsFailure("HTTPS through the tunnel failed")
+            else -> null
+        }
+        return Probe(tcpIp, dns, https, failure)
+    }
+
+    private fun vpnNetwork(): Network? = runCatching {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        cm.allNetworks.firstOrNull { n ->
+            cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+        }
+    }.getOrNull()
+
+    private fun fetch(net: Network, url: String): Int? = runCatching {
+        val conn = net.openConnection(URL(url)) as HttpURLConnection
         conn.connectTimeout = PROBE_TIMEOUT_MS
         conn.readTimeout = PROBE_TIMEOUT_MS
         conn.instanceFollowRedirects = false
         conn.requestMethod = "GET"
         try {
-            conn.responseCode in 200..399
+            val code = conn.responseCode
+            conn.inputStream.close()
+            code
         } finally {
             conn.disconnect()
         }
-    }.getOrDefault(false)
+    }.getOrNull()
 
     private fun teardownTunnel() {
         scope.launch {
