@@ -1,0 +1,16 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate-skills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate SKILL.md frontmatter and scan for obvious secrets
+        run: |
+          chmod +x scripts/validate-skills.sh
+          ./scripts/validate-skills.sh

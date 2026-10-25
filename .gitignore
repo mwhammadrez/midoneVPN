@@ -18,5 +18,5 @@ local.properties
 keystore.properties
 .env
 
-# Heavy binary, fetched by scripts/fetch-libxray.sh (see README)
-app/libs/*.aar
+# libXray is committed so a clone builds without network; scripts/fetch-libxray.sh can re-fetch it
+# with a SHA-256 check if you prefer not to trust the binary in history.
