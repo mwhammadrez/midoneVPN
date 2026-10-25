@@ -1,6 +1,8 @@
 package dev.tunnelkit.engine.xray
 
 import dev.tunnelkit.core.config.VlessLink
+import dev.tunnelkit.core.config.WireGuardConfig
+import dev.tunnelkit.core.config.WireGuardOutbound
 import dev.tunnelkit.core.config.XrayConfigBuilder
 import dev.tunnelkit.core.engine.ConfigFormat
 import dev.tunnelkit.core.engine.EngineConfig
@@ -37,7 +39,7 @@ class XrayAdapter(
         provenanceUrl = "https://github.com/XTLS/libXray",
         provenanceCommit = "dbe95129fa96689c4643ddca52c278448eec6df1",
         licenseId = "MIT",
-        formats = setOf(ConfigFormat.VLESS_LINK, ConfigFormat.XRAY_JSON),
+        formats = setOf(ConfigFormat.VLESS_LINK, ConfigFormat.XRAY_JSON, ConfigFormat.WIREGUARD_CONF),
         tunOwnership = TunOwnership.APP_TUN_FD_PASSED,
         supportsUdp = true,
         requires = setOf("server address+port", "uuid", "reality public key (reality only)", "sni (reality only)"),
@@ -88,6 +90,25 @@ class XrayAdapter(
                 }
             }
             ConfigFormat.XRAY_JSON -> config.payload
+            ConfigFormat.WIREGUARD_CONF -> {
+                val parsed = WireGuardConfig.parse(config.payload)
+                if (!parsed.ok) throw EngineFailureException(
+                    Failure.InvalidConfig(parsed.problems.joinToString(", ") { it.code.name.lowercase() })
+                )
+                val wg = parsed.config!!
+                val fd = config.runtime[EngineConfig.RUNTIME_TUN_FD]?.toIntOrNull()
+                if (fd != null) {
+                    XrayConfigBuilder.tunConfig(
+                        outboundJson = WireGuardOutbound.toOutboundJson(wg),
+                        fd = fd,
+                        mtu = mtu,
+                        dns = wg.interfaceSection.dns.firstOrNull()?.substringBefore('/') ?: "1.1.1.1",
+                        tunName = config.runtime[EngineConfig.RUNTIME_TUN_NAME] ?: "tun0",
+                    )
+                } else {
+                    XrayConfigBuilder.socksConfig(WireGuardOutbound.toOutboundJson(wg), socksPort)
+                }
+            }
             else -> throw EngineFailureException(Failure.UnsupportedFeature(config.format.name))
         }
 

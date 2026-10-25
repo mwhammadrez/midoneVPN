@@ -205,12 +205,13 @@ private fun MidOneApp() {
                         link = raw,
                         transport = "wireguard",
                         security = "udp",
+                        kind = "wireguard",
                     )
                     store.add(profile)
                     profiles = store.list()
                     selected = profile
                     importError = null
-                    importWarning = "ذخیره شد ($summary) — موتور WireGuard هنوز ادغام نشده"
+                    importWarning = "ذخیره شد ($summary) — با Connect امتحان کن"
                     return@import true
                 }
             }

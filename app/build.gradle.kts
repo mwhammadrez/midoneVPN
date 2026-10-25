@@ -33,8 +33,8 @@ android {
         applicationId = "dev.tunnelkit.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.9.4"
+        versionCode = 14
+        versionName = "0.10.0"
     }
 
     signingConfigs {

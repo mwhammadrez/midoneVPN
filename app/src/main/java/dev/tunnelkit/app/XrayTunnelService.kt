@@ -18,6 +18,7 @@ import dev.tunnelkit.core.diag.DiagLog
 import dev.tunnelkit.core.net.Preflight
 import dev.tunnelkit.core.model.Failure
 import dev.tunnelkit.core.config.VlessLink
+import dev.tunnelkit.core.config.WireGuardConfig
 import androidx.core.app.NotificationCompat
 import dev.tunnelkit.core.engine.EngineConfig
 import dev.tunnelkit.core.engine.EngineCoordinator
@@ -117,6 +118,65 @@ class XrayTunnelService : VpnService() {
         }
     }
 
+    /**
+     * WireGuard goes through Xray's own `wireguard` outbound: same tun inbound, userspace crypto,
+     * no second core and no root. It is UDP, so the TCP preflight does not apply.
+     */
+    private suspend fun runWireGuard(conf: String) {
+        val parsed = WireGuardConfig.parse(conf)
+        if (!parsed.ok) {
+            _state.value = ConnectionState.Failed(
+                Failure.InvalidConfig(parsed.problems.joinToString(", ") { it.code.name.lowercase() }),
+                EngineId("xray"),
+            )
+            postState(); shutdown(); return
+        }
+        val peer = parsed.config!!.peers.firstOrNull()
+        DiagLog.event("wireguard: ${parsed.config.redactedSummary()}")
+        val before = tunNames()
+        val pfd = Builder()
+            .setSession("TunnelKit")
+            .setMtu(parsed.config.interfaceSection.mtu ?: MTU)
+            .setBlocking(true)
+            .addAddress(TUN_ADDRESS, TUN_PREFIX)
+            .addRoute("0.0.0.0", 0)
+            .addRoute("::", 0)
+            .addDnsServer(parsed.config.interfaceSection.dns.firstOrNull()?.substringBefore('/') ?: "1.1.1.1")
+            .addDisallowedApplication(packageName)
+            .establish()
+        val tunName = (tunNames() - before).firstOrNull() ?: "tun0"
+        DiagLog.event("tun interface: $tunName")
+        if (pfd == null) {
+            _state.value = ConnectionState.Failed(Failure.PermissionDenied("establish() returned null"))
+            postState(); shutdown(); return
+        }
+        tun = pfd
+        coordinator.connect(
+            EngineId("xray"),
+            EngineConfig(
+                format = ConfigFormat.WIREGUARD_CONF,
+                payload = conf,
+                runtime = mapOf(
+                    EngineConfig.RUNTIME_TUN_FD to pfd.fd.toString(),
+                    EngineConfig.RUNTIME_TUN_NAME to tunName,
+                ),
+            ),
+        )
+        val result = coordinator.state.value
+        DiagLog.event("state=$result; peer=${peer?.endpoint ?: "-"}")
+        _state.value = result
+        postState()
+        if (result is ConnectionState.Connected) {
+            val probe = probeThroughTunnel()
+            DiagLog.event(probe.describe())
+            if (probe.failure != null) {
+                _state.value = ConnectionState.Failed(probe.failure, EngineId("xray"))
+                postState()
+                teardownTunnel()
+            }
+        }
+    }
+
     private suspend fun establishAndRun() {
         val profile = ProfileStore(this).selected()
         if (profile == null) {
@@ -126,6 +186,10 @@ class XrayTunnelService : VpnService() {
             return
         }
         val link = profile.link
+        if (profile.kind == "wireguard" || link.trimStart().startsWith("[Interface]")) {
+            runWireGuard(link)
+            return
+        }
         val parsedLink = VlessLink.parse(link).getOrElse { e ->
             _state.value = ConnectionState.Failed(
                 Failure.InvalidConfig(e.message ?: "unparsable link"), EngineId("xray")
