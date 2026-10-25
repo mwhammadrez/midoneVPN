@@ -19,7 +19,7 @@ import dev.tunnelkit.core.model.Failure
  *
  * Two modes:
  *  - `APP_TUN_FD_PASSED` (Android): the service creates the TUN and hands the fd over via
- *    `EngineConfig.runtime["tun.fd"]`; the config then carries a `tun` inbound and `XRAY_TUN_FD`.
+ *    `EngineConfig.runtime["tun.fd"]`; the config then carries a `tun` inbound and `xray.tun.fd`.
  *  - `LOCAL_PROXY` (desktop/test): no fd, so the config carries a loopback SOCKS inbound.
  */
 class XrayAdapter(
@@ -80,6 +80,7 @@ class XrayAdapter(
                         outboundJson = link.toOutboundJson(),
                         fd = fd,
                         mtu = mtu,
+                        tunName = config.runtime[EngineConfig.RUNTIME_TUN_NAME] ?: "tun0",
                         dns = dnsServer?.substringBefore(':'),
                     )
                 } else {

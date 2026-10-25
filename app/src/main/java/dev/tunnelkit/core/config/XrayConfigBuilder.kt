@@ -5,7 +5,7 @@ package dev.tunnelkit.core.config
  *
  * Two shapes are supported:
  *  - [socksConfig]  — Xray listens on a local SOCKS port; a tun2socks pump feeds it.
- *  - [tunConfig]    — Xray consumes the Android VpnService fd directly through `XRAY_TUN_FD`.
+ *  - [tunConfig]    — Xray consumes the Android VpnService fd directly through `xray.tun.fd`.
  *                     Verified on 2026-10-24 against Xray 26.10.21: with `XRAY_TUN_FD=999` the
  *                     binary fails with "bad file descriptor" (it read the variable); without it,
  *                     "operation not permitted" (it tried to create its own TUN).
@@ -49,12 +49,17 @@ object XrayConfigBuilder {
         fd: Int,
         mtu: Int = 1400,
         dns: String? = "1.1.1.1",
+        /** Interface name of the device behind [fd]. Xray rejects the fd if it does not match. */
+        tunName: String = "tun0",
     ): String = buildString {
         append("""{"log":{"loglevel":"warning"},""")
-        // Xray-core applies root `env` with os.Setenv before building the tun inbound.
-        append(""""env":{"XRAY_TUN_FD":""").append(quote(fd.toString())).append("},")
+        // libXray removed SetTunFd: the fd must travel as `xray.tun.fd` in the root `env` object,
+        // which Xray applies with os.Setenv before building the tun inbound. The old key
+        // `XRAY_TUN_FD` is not read by the core (verified against libXray's README and the
+        // 26.10.21 binary), so the inbound silently failed to attach and no packet ever moved.
+        append(""""env":{"xray.tun.fd":""").append(quote(fd.toString())).append("},")
         append(""""inbounds":[{"tag":"tun-in","protocol":"tun","settings":{""")
-        append(""""name":"tun0","mtu":""").append(mtu)
+        append(""""name":""").append(quote(tunName)).append(""","mtu":""").append(mtu)
         if (dns != null) append(""","dns":[""").append(quote(dns)).append("]")
         append("}")   // close "settings"; the inbound itself closes after "sniffing"
         // Sniffing recovers the requested hostname from TLS/HTTP so routing and DNS work even when

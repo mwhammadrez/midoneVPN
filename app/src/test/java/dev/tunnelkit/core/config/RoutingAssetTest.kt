@@ -23,3 +23,23 @@ class DefaultRouteTest {
         assertTrue(cfg.contains("\"network\":\"tcp,udp\",\"outboundTag\":\"proxy\""))
     }
 }
+
+class TunHandoverTest {
+    private val outbound = """{"tag":"proxy","protocol":"vless","settings":{}}"""
+
+    @Test
+    fun fdIsPassedUnderTheNameTheCoreReads() {
+        // libXray removed SetTunFd; `XRAY_TUN_FD` is not read by Xray and the inbound never attaches.
+        val cfg = XrayConfigBuilder.tunConfig(outbound, fd = 42)
+        assertTrue(cfg.contains("\"xray.tun.fd\":\"42\""))
+        assertTrue(!cfg.contains("XRAY_TUN_FD"))
+    }
+
+    @Test
+    fun deviceNameIsCarriedAndMatchesTheInterface() {
+        // Xray refuses the fd when settings.name differs from the real interface: "TUN device name
+        // tun9 does not match configured name tun0".
+        assertTrue(XrayConfigBuilder.tunConfig(outbound, fd = 1, tunName = "tun1").contains("\"name\":\"tun1\""))
+        assertTrue(XrayConfigBuilder.tunConfig(outbound, fd = 1).contains("\"name\":\"tun0\""))
+    }
+}

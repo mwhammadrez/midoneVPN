@@ -53,7 +53,14 @@ data class EngineConfig(
     val label: String = "",
     /** Runtime-only values injected at connect time (e.g. the TUN fd). Never persisted. */
     val runtime: Map<String, String> = emptyMap(),
-) { companion object { const val RUNTIME_TUN_FD = "tun.fd" } }
+) {
+    companion object {
+        const val RUNTIME_TUN_FD = "tun.fd"
+
+        /** Name of the interface behind the fd; Xray refuses the fd when it does not match. */
+        const val RUNTIME_TUN_NAME = "tun.name"
+    }
+}
 
 data class ValidationResult(val ok: Boolean, val reason: String = "") {
     companion object {

@@ -89,7 +89,7 @@ class XrayAdapterTest {
             )
         )
         val request = core.requests.last()
-        assertTrue(request.contains("XRAY_TUN_FD"))
+        assertTrue(request.contains("xray.tun.fd"))
         assertTrue(request.contains("tun"))
         assertTrue(request.contains("42"))
         assertTrue(request.contains("1400"))

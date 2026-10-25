@@ -15,6 +15,9 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.util.Log
 import dev.tunnelkit.core.diag.DiagLog
+import dev.tunnelkit.core.net.Preflight
+import dev.tunnelkit.core.model.Failure
+import dev.tunnelkit.core.config.VlessLink
 import androidx.core.app.NotificationCompat
 import dev.tunnelkit.core.engine.EngineConfig
 import dev.tunnelkit.core.engine.EngineCoordinator
@@ -38,7 +41,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Real tunnel: this service owns the VpnService lifecycle, creates the TUN, and hands its file
- * descriptor to Xray through `XRAY_TUN_FD`. Xray then owns packet flow; there is no second pump.
+ * descriptor to Xray through `xray.tun.fd`. Xray then owns packet flow; there is no second pump.
  *
  * Teardown order matters and is fixed here:
  *   coordinator.stop()  ->  close the TUN fd  ->  stopForeground  ->  stopSelf
@@ -105,7 +108,13 @@ class XrayTunnelService : VpnService() {
             return
         }
         val link = profile.link
+        val parsedLink = VlessLink.parse(link).getOrElse { e ->
+            _state.value = ConnectionState.Failed(Failure.InvalidConfig(e.message ?: "unparsable link"), EngineId("xray"))
+            postState(); shutdown(); return
+        }
+        if (!preflight(parsedLink)) return
 
+        val before = tunNames()
         val pfd = Builder()
             .setSession("TunnelKit")
             .setMtu(MTU)
@@ -118,7 +127,9 @@ class XrayTunnelService : VpnService() {
             .addDisallowedApplication(packageName)
             .establish()
 
-        Log.i(TAG, "TUN establish -> ${if (pfd == null) "null" else "fd=${pfd.fd}"}"); DiagLog.event("establish=${if (pfd == null) "null" else "ok fd=${pfd.fd}"}")
+        val tunName = (tunNames() - before).firstOrNull() ?: "tun0"
+        DiagLog.event("tun interface: $tunName")
+        Log.i(TAG, "TUN establish -> ${if (pfd == null) "null" else "fd=${pfd.fd}"} name=$tunName"); DiagLog.event("establish=${if (pfd == null) "null" else "ok fd=${pfd.fd}"}")
         if (pfd == null) {
             _state.value = ConnectionState.Failed(
                 dev.tunnelkit.core.model.Failure.PermissionDenied("establish() returned null")
@@ -135,7 +146,10 @@ class XrayTunnelService : VpnService() {
                 EngineConfig(
                     format = ConfigFormat.VLESS_LINK,
                     payload = link,
-                    runtime = mapOf(EngineConfig.RUNTIME_TUN_FD to pfd.fd.toString()),
+                    runtime = mapOf(
+                        EngineConfig.RUNTIME_TUN_FD to pfd.fd.toString(),
+                        EngineConfig.RUNTIME_TUN_NAME to tunName,
+                    ),
                 ),
             )
             val result = coordinator.state.value
@@ -220,6 +234,38 @@ class XrayTunnelService : VpnService() {
             conn.disconnect()
         }
     }.getOrNull()
+
+    /**
+     * Checks TCP -> TLS -> one HTTP request before the engine starts.
+     *
+     * Xray reports success as soon as its config loads, so without this a dead or misconfigured
+     * endpoint still shows "Connected".
+     */
+    private fun preflight(link: VlessLink): Boolean {
+        val result = Preflight.check(link)
+        DiagLog.event(result.describe())
+        Log.i(TAG, result.describe())
+        val failure = result.failure
+        val certPinned = !link.pinnedCertSha256.isNullOrBlank() || !link.verifyPeerCertByName.isNullOrBlank()
+        val fatal = failure is Failure.EndpointUnreachable ||
+            (failure is Failure.TlsFailure && !certPinned)
+        if (fatal) {
+            _state.value = ConnectionState.Failed(failure!!, EngineId("xray"))
+            postState()
+            shutdown()
+            return false
+        }
+        return true
+    }
+
+    /** Interface names currently present; diffing before/after establish() reveals the TUN. */
+    internal fun tunNames(): Set<String> = runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces()
+            .toList()
+            .filter { it.name.startsWith("tun") }
+            .map { it.name }
+            .toSet()
+    }.getOrDefault(emptySet())
 
     private fun teardownTunnel() {
         scope.launch {

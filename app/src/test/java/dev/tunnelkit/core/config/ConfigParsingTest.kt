@@ -99,7 +99,7 @@ class RoutingAssetTest {
         listOf("10.0.0.0/8", "192.168.0.0/16", "127.0.0.0/8", "fc00::/7").forEach {
             assertTrue("missing $it", cfg.contains("\"$it\""))
         }
-        assertTrue(cfg.contains("\"XRAY_TUN_FD\":\"42\""))
+        assertTrue(cfg.contains("\"xray.tun.fd\":\"42\""))
         assertTrue(cfg.contains("\"protocol\":\"tun\""))
     }
 
