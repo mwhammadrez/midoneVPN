@@ -22,24 +22,69 @@ object Preflight {
         val tls: Boolean?,
         val httpStatus: Int?,
         val failure: Failure?,
+        val reason: String? = null,
     ) {
         fun describe(): String =
-            "preflight tcp=${tcpMs?.let { "${it}ms" } ?: "fail"} " +
-                "tls=${tls?.toString() ?: "n/a"} http=${httpStatus ?: "none"}" +
+            "preflight tcp=${tcpMs?.let { "${it}ms" } ?: "fail"}" +
+                (reason?.let { "($it)" } ?: "") +
+                " tls=${tls?.toString() ?: "n/a"} http=${httpStatus ?: "none"}" +
                 (failure?.let { " -> ${it.code}" } ?: "")
+    }
+
+    /**
+     * Every way this profile could plausibly be reached, best first.
+     *
+     * CDN-fronted links often carry the CDN's own apex as the address while the real site sits in the
+     * Host header. If that combination is refused, the same credentials usually work when we dial the
+     * site's own domain over TLS/443 — so the app tries both instead of asking the user to guess.
+     */
+    fun candidates(link: VlessLink): List<VlessLink> = buildList {
+        add(link)
+        val header = link.hostHeader?.takeIf { it.isNotBlank() && it != link.host }
+        if (link.security == "none" && !link.isPrivateHost()) {
+            add(link.copy(port = 443, security = "tls", sni = header ?: link.host))
+        }
+        if (header != null && link.security != "reality") {
+            add(link.copy(host = header, port = 443, security = "tls", sni = header))
+        }
+    }
+
+    /** Tries each candidate and returns the first that answers, or the furthest one with its failure. */
+    fun firstReachable(link: VlessLink, timeoutMs: Int = 5000): Pair<VlessLink, Result> {
+        var best: Pair<VlessLink, Result>? = null
+        val tried = mutableListOf<String>()
+        for (candidate in candidates(link)) {
+            val r = check(candidate, timeoutMs)
+            tried += "${candidate.host}:${candidate.port}/${candidate.security} ${r.describe()}"
+            if (r.failure == null) return candidate to r
+            // keep the candidate that got furthest (tcp, then tls, then http)
+            val score = (if (r.tcpMs != null) 1 else 0) + (if (r.tls == true) 1 else 0) + (if (r.httpStatus != null) 1 else 0)
+            val bestScore = best?.let { (_, b) ->
+                (if (b.tcpMs != null) 1 else 0) + (if (b.tls == true) 1 else 0) + (if (b.httpStatus != null) 1 else 0)
+            } ?: -1
+            if (score > bestScore) best = candidate to r
+        }
+        val (c, r) = best ?: (link to check(link, timeoutMs))
+        return c to r.copy(reason = r.reason)
     }
 
     fun check(link: VlessLink, timeoutMs: Int = 6000): Result {
         // 1. TCP
         val started = System.currentTimeMillis()
         val socket = Socket()
-        val tcpOk = runCatching {
+        val tcpError = runCatching {
             socket.connect(InetSocketAddress(link.host, link.port), timeoutMs)
-        }.isSuccess
+        }.exceptionOrNull()
         val tcpMs = (System.currentTimeMillis() - started).toInt()
-        if (!tcpOk) {
+        if (tcpError != null) {
             runCatching { socket.close() }
-            return Result(null, null, null, Failure.EndpointUnreachable("tcp ${link.host}:${link.port} did not connect"))
+            val why = tcpError.javaClass.simpleName +
+                (tcpError.message?.let { ": ${it.take(60)}" } ?: "")
+            return Result(
+                null, null, null,
+                Failure.EndpointUnreachable("tcp ${link.host}:${link.port} — $why"),
+                reason = why,
+            )
         }
 
         // 2. TLS (REALITY cannot be preflighted with a plain TLS handshake)

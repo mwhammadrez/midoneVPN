@@ -98,21 +98,58 @@ class XrayTunnelService : VpnService() {
     private fun connect() {
         if (!busy.compareAndSet(false, true)) return
 
+        // Everything network-facing, plus VpnService.Builder.establish(), runs off the main thread.
+        // Preflight used to be called straight from onStartCommand, so Android threw
+        // NetworkOnMainThreadException and every attempt reported "tcp=fail" within milliseconds.
+        scope.launch {
+            try {
+                establishAndRun()
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                DiagLog.event("connect crashed: ${t.javaClass.simpleName}: ${t.message?.take(120)}")
+                _state.value = ConnectionState.Failed(
+                    Failure.Unknown("${t.javaClass.simpleName}: ${t.message?.take(120)}"), EngineId("xray")
+                )
+                postState()
+                teardownTunnel()
+            }
+        }
+    }
+
+    private suspend fun establishAndRun() {
         val profile = ProfileStore(this).selected()
         if (profile == null) {
-            _state.value = ConnectionState.Failed(
-                dev.tunnelkit.core.model.Failure.MissingBootstrap("no profile imported")
-            )
+            _state.value = ConnectionState.Failed(Failure.MissingBootstrap("no profile imported"))
             postState()
             shutdown()
             return
         }
         val link = profile.link
         val parsedLink = VlessLink.parse(link).getOrElse { e ->
-            _state.value = ConnectionState.Failed(Failure.InvalidConfig(e.message ?: "unparsable link"), EngineId("xray"))
+            _state.value = ConnectionState.Failed(
+                Failure.InvalidConfig(e.message ?: "unparsable link"), EngineId("xray")
+            )
             postState(); shutdown(); return
         }
-        if (!preflight(parsedLink)) return
+        // Try every plausible endpoint (as-is, TLS/443, the real domain) and use the first that answers.
+        val (chosen, pre) = Preflight.firstReachable(parsedLink)
+        DiagLog.event(pre.describe())
+        Log.i(TAG, pre.describe())
+        val certPinned = !chosen.pinnedCertSha256.isNullOrBlank() || !chosen.verifyPeerCertByName.isNullOrBlank()
+        // Only transport-level proof stops us: no TCP, or TLS refused and nothing pinned.
+        // A missing HTTP answer is not fatal — WebSocket endpoints often ignore a plain GET.
+        val fatal = pre.failure is Failure.EndpointUnreachable ||
+            (pre.failure is Failure.TlsFailure && !certPinned)
+        if (fatal) {
+            DiagLog.event("no candidate reachable; keeping ${chosen.host}:${chosen.port}")
+            _state.value = ConnectionState.Failed(pre.failure!!, EngineId("xray"))
+            postState()
+            shutdown()
+            return
+        }
+        val effectiveLink = if (chosen === parsedLink) link else chosen.toShareLink()
+        DiagLog.event("using ${chosen.host}:${chosen.port}/${chosen.security}")
 
         val before = tunNames()
         val pfd = Builder()
@@ -129,44 +166,41 @@ class XrayTunnelService : VpnService() {
 
         val tunName = (tunNames() - before).firstOrNull() ?: "tun0"
         DiagLog.event("tun interface: $tunName")
-        Log.i(TAG, "TUN establish -> ${if (pfd == null) "null" else "fd=${pfd.fd}"} name=$tunName"); DiagLog.event("establish=${if (pfd == null) "null" else "ok fd=${pfd.fd}"}")
+        Log.i(TAG, "TUN establish -> ${if (pfd == null) "null" else "fd=${pfd.fd}"} name=$tunName")
+        DiagLog.event("establish=${if (pfd == null) "null" else "ok fd=${pfd.fd}"}")
         if (pfd == null) {
-            _state.value = ConnectionState.Failed(
-                dev.tunnelkit.core.model.Failure.PermissionDenied("establish() returned null")
-            )
+            _state.value = ConnectionState.Failed(Failure.PermissionDenied("establish() returned null"))
             postState()
             shutdown()
             return
         }
         tun = pfd
 
-        scope.launch {
-            coordinator.connect(
-                EngineId("xray"),
-                EngineConfig(
-                    format = ConfigFormat.VLESS_LINK,
-                    payload = link,
-                    runtime = mapOf(
-                        EngineConfig.RUNTIME_TUN_FD to pfd.fd.toString(),
-                        EngineConfig.RUNTIME_TUN_NAME to tunName,
-                    ),
+        coordinator.connect(
+            EngineId("xray"),
+            EngineConfig(
+                format = ConfigFormat.VLESS_LINK,
+                payload = effectiveLink,
+                runtime = mapOf(
+                    EngineConfig.RUNTIME_TUN_FD to pfd.fd.toString(),
+                    EngineConfig.RUNTIME_TUN_NAME to tunName,
                 ),
-            )
-            val result = coordinator.state.value
-            Log.i(TAG, "connect result: $result"); DiagLog.event("state=$result")
-            _state.value = result
-            postState()
+            ),
+        )
+        val result = coordinator.state.value
+        Log.i(TAG, "connect result: $result"); DiagLog.event("state=$result")
+        _state.value = result
+        postState()
 
-            if (result is ConnectionState.Connected) {
-                val probe = probeThroughTunnel()
-                DiagLog.event(probe.describe())
-                Log.i(TAG, probe.describe())
-                if (probe.failure != null) {
-                    // Interface is up but traffic does not flow: report it instead of pretending.
-                    _state.value = ConnectionState.Failed(probe.failure, EngineId("xray"))
-                    postState()
-                    teardownTunnel()
-                }
+        if (result is ConnectionState.Connected) {
+            val probe = probeThroughTunnel()
+            DiagLog.event(probe.describe())
+            Log.i(TAG, probe.describe())
+            if (probe.failure != null) {
+                // Interface is up but traffic does not flow: report it instead of pretending.
+                _state.value = ConnectionState.Failed(probe.failure, EngineId("xray"))
+                postState()
+                teardownTunnel()
             }
         }
     }
@@ -234,29 +268,6 @@ class XrayTunnelService : VpnService() {
             conn.disconnect()
         }
     }.getOrNull()
-
-    /**
-     * Checks TCP -> TLS -> one HTTP request before the engine starts.
-     *
-     * Xray reports success as soon as its config loads, so without this a dead or misconfigured
-     * endpoint still shows "Connected".
-     */
-    private fun preflight(link: VlessLink): Boolean {
-        val result = Preflight.check(link)
-        DiagLog.event(result.describe())
-        Log.i(TAG, result.describe())
-        val failure = result.failure
-        val certPinned = !link.pinnedCertSha256.isNullOrBlank() || !link.verifyPeerCertByName.isNullOrBlank()
-        val fatal = failure is Failure.EndpointUnreachable ||
-            (failure is Failure.TlsFailure && !certPinned)
-        if (fatal) {
-            _state.value = ConnectionState.Failed(failure!!, EngineId("xray"))
-            postState()
-            shutdown()
-            return false
-        }
-        return true
-    }
 
     /** Interface names currently present; diffing before/after establish() reveals the TUN. */
     internal fun tunNames(): Set<String> = runCatching {
